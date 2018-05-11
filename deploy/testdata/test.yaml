@@ -1,0 +1,99 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    app: sample-metrics-app
+  name: sample-metrics-app
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: sample-metrics-app
+    spec:
+      tolerations:
+      - key: beta.kubernetes.io/arch
+        value: arm
+        effect: NoSchedule
+      - key: beta.kubernetes.io/arch
+        value: arm64
+        effect: NoSchedule
+      - key: node.alpha.kubernetes.io/unreachable
+        operator: Exists
+        effect: NoExecute
+        tolerationSeconds: 0
+      - key: node.alpha.kubernetes.io/notReady
+        operator: Exists
+        effect: NoExecute
+        tolerationSeconds: 0
+      containers:
+      - image: luxas/autoscale-demo:v0.1.2
+        name: sample-metrics-app
+        ports:
+        - name: web
+          containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 3
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sample-metrics-app
+  labels:
+    app: sample-metrics-app
+  annotations:
+    prometheus.io/scrape: 'true'
+spec:
+  type: NodePort
+  ports:
+  - name: web
+    port: 80
+    targetPort: 8080
+  selector:
+    app: sample-metrics-app
+---
+kind: HorizontalPodAutoscaler
+apiVersion: autoscaling/v2alpha1
+metadata:
+  name: sample-metrics-app-hpa
+spec:
+  scaleTargetRef:
+    kind: Deployment
+    name: sample-metrics-app
+  minReplicas: 1
+  maxReplicas: 2
+  metrics:
+  - type: Object
+    object:
+      target:
+        kind: Service
+        name: sample-metrics-app
+      metricName: http_requests
+      targetValue: 100
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: sample-metrics-app
+  namespace: default
+  annotations:
+    traefik.frontend.rule.type: PathPrefixStrip
+spec:
+  rules:
+  - http:
+      paths:
+      - path: /sample-app
+        backend:
+          serviceName: sample-metrics-app
+          servicePort: 80
+
